@@ -1,0 +1,7 @@
+{
+  "ApiConnect": {
+    "BaseUrl": "http://localhost:5164",
+    "ChatHubUrl": "http://localhost:5164/chatHub",
+    "DebugMode": true
+  }
+}

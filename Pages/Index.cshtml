@@ -1,0 +1,206 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Чат";
+}
+
+<div class="container">
+
+    <div class="title">
+        <span id="titleSpan">Ваш дневной лимит запросов</span>
+    </div>
+
+    <div class="progress-wrapper">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="counter">
+        Осталось: <span id="remaining-count">30</span> / 30
+    </div>
+</div>
+
+
+<div class="chat-container">
+    <div class="chat-messages" id="chat-box">
+        @foreach (var msg in Model.Messages)
+        {
+            <div class="chat-message @(msg.User == "User" ? "self" : "other")">
+                <b>@msg.User:</b> @msg.Text
+            </div>
+        }
+    </div>
+
+    <form id="chat-form" class="chat-input">
+        <textarea rows="1" id="message-input" name="messageText" placeholder="Введите сообщение..." ></textarea>
+        <button type="submit" id="sendButton">Отправить</button>
+    </form>
+</div>
+
+
+
+
+
+@section Scripts {
+
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <script>
+        const textarea = document.getElementById("message-input");
+        const chatHubUrl = '@Model.ViewData["ChatHubUrl"]';
+        const apiBaseUrl = '@Model.ViewData["ApiBaseUrl"]';
+        const timeout = @Model.ViewData["Timeout"];
+        const user = "Hudson";
+        
+        const maxRequests = 30;
+        const countElement = document.getElementById("remaining-count");
+        const progressBar = document.getElementById("progress-bar");
+
+
+        console.log('Connect to:', chatHubUrl);
+        console.log('Timeout:', timeout, 'ms');
+
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl(chatHubUrl)
+            .configureLogging(signalR.LogLevel.Information)
+            .build();
+
+
+        function autoResize(textarea)
+        {
+            textarea.style.height = 'auto';
+            textarea.style.height = (textarea.scrollHeight)+ 'px';
+        }
+
+        function resetMessageInput() {
+            const messageInput = document.getElementById("message-input");
+
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+            messageInput.style.overflowY = 'hidden';
+            messageInput.style.height = '40px';
+
+
+        }
+
+        async function start() {
+            try {
+                await connection.start();
+                console.log("SignalR Connected.");
+            } catch (err) {
+                console.log(err);
+                setTimeout(start, 5000);
+            }
+        };
+
+           function updateUI(remaining) {
+         
+            if (remaining == null || isNaN(remaining)) {
+                console.warn("updateUI: remaining is not a number:", remaining);
+                return;
+            }
+
+            remaining = Math.max(0, Math.floor(remaining));
+
+         
+            countElement.textContent = remaining;
+
+            countElement.classList.remove("remaining-high", "remaining-medium", "remaining-low");
+            if (remaining > 20) countElement.classList.add("remaining-high");
+            else if (remaining > 10) countElement.classList.add("remaining-medium");
+            else countElement.classList.add("remaining-low");
+
+      
+            const percent = Math.round((remaining / maxRequests) * 100);
+            progressBar.style.width = percent + "%";
+
+            progressBar.style.transition = "width 0.5s ease, background-color 0.3s ease";
+             
+       
+            progressBar.classList.remove("progress-high", "progress-medium", "progress-low");
+            if (remaining > 20) progressBar.classList.add("progress-high");
+            else if (remaining > 10) progressBar.classList.add("progress-medium");
+            else progressBar.classList.add("progress-low");
+
+
+             console.debug("updateUI:", remaining, percent + "%");
+        }
+
+        async function sendMessageTo()
+        {
+
+            const message = textarea.value.trim();
+            autoResize(textarea);
+            const chatBox = document.getElementById("chat-box");
+            const messageDiv = document.createElement("div");
+            messageDiv.className = `chat-message ${user === "Hudson" ? "self" : "other"}`;
+            messageDiv.innerHTML = `<b>${user}:</b> ${message}`;
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            if (message) {
+
+                try {
+                    resetMessageInput();
+                    await connection.invoke("SendMessage", message);
+                } catch (err) {
+                    console.error(err);
+                }
+            }
+        }
+
+
+        textarea.addEventListener("input",() => {
+            textarea.style.height = "auto";
+            const newHeight = Math.min(textarea.scrollHeight, 160); 
+
+            textarea.style.height = newHeight + "px";
+
+          
+            if (textarea.scrollHeight > 160) {
+                textarea.style.overflowY = "auto";
+            } else {
+                textarea.style.overflowY = "hidden";
+            }
+        });      
+    
+        textarea.addEventListener("keydown", function(event) {
+            if(event.key == 'Enter' && !event.shiftKey)
+            {
+                console.log('Enter without Shift - preventing default and sending');
+                event.preventDefault();
+                sendMessageTo(); 
+            } 
+        });
+
+        document.getElementById("chat-form").addEventListener("submit", async function (e) {
+            console.log('Form submit event fired');
+            e.preventDefault();
+            sendMessageTo();
+        });
+
+        connection.on("UpdateRemainingRequests", function (remaining) {
+            updateUI(remaining);
+        });
+
+        connection.on("ReceiveMessage", (user, message) => {
+
+
+            const chatBox = document.getElementById("chat-box");
+            const messageDiv = document.createElement("div");
+            messageDiv.className = `chat-message ${user === "User" ? "self" : "other"}`;
+            messageDiv.innerHTML = `<b>${user}:</b> ${message}`;
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        });
+
+        connection.onclose(async () => {
+            await start();
+        });
+
+            
+        start();
+    </script>
+
+
+    }
+
